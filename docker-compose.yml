@@ -1,0 +1,18 @@
+services:
+  proofquest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: proofquest:latest
+    container_name: proofquest
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M

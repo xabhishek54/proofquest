@@ -1,0 +1,15 @@
+{
+  "name": "proofquest",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ProofQuest: Every Move Must Be Proven — Lean 4 Verified Puzzle Game",
+  "scripts": {
+    "build:lean": "cd lean && ~/.elan/bin/lake build",
+    "build:server": "npm --prefix server run build",
+    "build:client": "npm --prefix client run build",
+    "build": "npm run build:client && npm run build:server",
+    "start": "node server/dist/server.js",
+    "test": "npm --prefix server test",
+    "test:watch": "npm --prefix server test -- --watch"
+  }
+}
