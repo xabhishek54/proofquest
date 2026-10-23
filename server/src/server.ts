@@ -95,8 +95,17 @@ app.get("*", (_req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`[ProofQuest Server] Running on http://localhost:${PORT}`);
   console.log(`[ProofQuest Server] Lean library path: ${LEAN_DIR}`);
   console.log(`[ProofQuest Server] Elan binaries path: ${ELAN_BIN_DIR}`);
+
+  // Pre-warm Lean cache with Level 1 reference solution
+  try {
+    const l1 = LEVELS[0];
+    await verifyProof(l1, l1.referenceSolution, LEAN_DIR, ELAN_BIN_DIR);
+    console.log("[ProofQuest Server] Lean engine pre-warmed and cached successfully.");
+  } catch (err) {
+    console.warn("[ProofQuest Server] Pre-warm notice:", err);
+  }
 });

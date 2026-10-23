@@ -1,5 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { Play, RotateCcw, Lightbulb, BookOpen, Star, Sparkles, ChevronRight } from "lucide-react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import {
+  Play, RotateCcw, BookOpen, Star, Sparkles, ChevronRight,
+  Volume2, VolumeX, Layers, Lightbulb
+} from "lucide-react";
 import { BoardView } from "./components/BoardView.js";
 import { CodeEditor } from "./components/CodeEditor.js";
 import { MessagePanel } from "./components/MessagePanel.js";
@@ -9,6 +12,7 @@ import { RawOutputModal } from "./components/RawOutputModal.js";
 import { ConceptCardModal } from "./components/ConceptCardModal.js";
 import { WinModal } from "./components/WinModal.js";
 import { LevelData, VerificationResult, BoardSpec } from "./types.js";
+import { sound } from "./utils/audio.js";
 
 export const App: React.FC = () => {
   const [levels, setLevels] = useState<LevelData[]>([]);
@@ -18,6 +22,13 @@ export const App: React.FC = () => {
   const [result, setResult] = useState<VerificationResult | null>(null);
   const [activeStep, setActiveStep] = useState<number>(0);
   const [usedHints, setUsedHints] = useState<boolean>(false);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  // Settings & Toggles
+  const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
+  const [showDiff, setShowDiff] = useState<boolean>(true);
+  const [showSymbols, setShowSymbols] = useState<boolean>(true);
+  const [showNumbers, setShowNumbers] = useState<boolean>(true);
 
   // Modals state
   const [isRawModalOpen, setIsRawModalOpen] = useState<boolean>(false);
@@ -33,6 +44,12 @@ export const App: React.FC = () => {
       return {};
     }
   });
+
+  // Toggle sound
+  const handleToggleAudio = () => {
+    sound.enabled = !audioEnabled;
+    setAudioEnabled(!audioEnabled);
+  };
 
   // Fetch all levels on mount
   useEffect(() => {
@@ -59,6 +76,7 @@ export const App: React.FC = () => {
           setActiveStep(0);
           setUsedHints(false);
           setIsWinModalOpen(false);
+          setHoveredIdx(null);
         }
       })
       .catch(err => console.error(`Failed to load level ${lvlId}:`, err));
@@ -69,6 +87,16 @@ export const App: React.FC = () => {
   }, [currentLevelId, loadLevel]);
 
   const currentLevel = levels.find(l => l.id === currentLevelId) || levels[0];
+
+  // Count active player tactic moves currently in code
+  const currentMoveCount = useMemo(() => {
+    const lines = code.split("\n").map(l => l.trim());
+    return lines.filter(l => {
+      if (l === "" || l.startsWith("--")) return false;
+      if (l.startsWith("macro ") || l.startsWith("local macro ")) return false;
+      return true;
+    }).length;
+  }, [code]);
 
   // Execute Lean verification
   const handleVerify = async () => {
@@ -95,6 +123,7 @@ export const App: React.FC = () => {
       }
 
       if (data.success) {
+        sound.playSuccess();
         const stars = !usedHints && data.isPar ? 3 : data.isPar || !usedHints ? 2 : 1;
         setStarsMap(prev => {
           const next = { ...prev, [currentLevel.id]: Math.max(prev[currentLevel.id] || 0, stars) };
@@ -104,8 +133,11 @@ export const App: React.FC = () => {
           return next;
         });
         setIsWinModalOpen(true);
+      } else {
+        sound.playError();
       }
     } catch (err: any) {
+      sound.playError();
       setResult({
         success: false,
         status: "error",
@@ -123,8 +155,25 @@ export const App: React.FC = () => {
     }
   };
 
+  // Keyboard shortcut listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        e.preventDefault();
+        handleVerify();
+      }
+      if (e.key === "Escape") {
+        setIsRawModalOpen(false);
+        setIsConceptModalOpen(false);
+        setIsWinModalOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleVerify]);
+
   // Determine which board to display based on timeline scrubber
-  const displayedBoard: BoardSpec = React.useMemo(() => {
+  const displayedBoard: BoardSpec = useMemo(() => {
     if (!currentLevel) {
       return { width: 3, height: 3, cells: [] };
     }
@@ -137,6 +186,7 @@ export const App: React.FC = () => {
 
   // Insert tactic template from palette
   const handleInsertMove = (moveSnippet: string) => {
+    sound.playInsert();
     setCode(prev => {
       const trimmed = prev.trimEnd();
       return trimmed === "" ? moveSnippet + "\n" : trimmed + "\n" + moveSnippet + "\n";
@@ -152,6 +202,7 @@ export const App: React.FC = () => {
 
   const handleResetLevel = () => {
     if (currentLevel) {
+      sound.playInsert();
       setCode(currentLevel.initialCode || "");
       setResult(null);
       setActiveStep(0);
@@ -202,6 +253,22 @@ export const App: React.FC = () => {
         <div className="header-actions">
           <button
             className="btn btn-secondary"
+            onClick={handleToggleAudio}
+            title={audioEnabled ? "Mute audio sound effects" : "Unmute audio sound effects"}
+            style={{ padding: "8px 10px" }}
+          >
+            {audioEnabled ? <Volume2 size={16} color="#38bdf8" /> : <VolumeX size={16} color="#64748b" />}
+          </button>
+          <button
+            className="btn btn-secondary"
+            onClick={() => setShowDiff(!showDiff)}
+            title={showDiff ? "Hide visual diff indicators" : "Show visual diff indicators"}
+            style={{ padding: "8px 10px" }}
+          >
+            <Layers size={16} color={showDiff ? "#10b981" : "#64748b"} />
+          </button>
+          <button
+            className="btn btn-secondary"
             onClick={() => setIsConceptModalOpen(true)}
             title="Read concept card for this level"
           >
@@ -233,9 +300,11 @@ export const App: React.FC = () => {
             <div className="panel-title">
               <span>Visual Proof State</span>
             </div>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-              Par: {currentLevel.par} Moves
-            </span>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                Par: {currentLevel.par} Moves
+              </span>
+            </div>
           </div>
 
           <div className="boards-wrapper">
@@ -244,14 +313,30 @@ export const App: React.FC = () => {
                 <div className="board-label active">
                   Current Board {activeStep > 0 && `(Step ${activeStep})`}
                 </div>
-                <BoardView board={displayedBoard} target={currentLevel.target} />
+                <BoardView
+                  board={displayedBoard}
+                  target={currentLevel.target}
+                  hoveredIdx={hoveredIdx}
+                  onHoverIdx={setHoveredIdx}
+                  showDiff={showDiff}
+                  showSymbols={showSymbols}
+                  showNumbers={showNumbers}
+                />
               </div>
 
               <div className="board-container">
                 <div className="board-label">
                   Target Board
                 </div>
-                <BoardView board={currentLevel.target} isTarget />
+                <BoardView
+                  board={currentLevel.target}
+                  isTarget
+                  hoveredIdx={hoveredIdx}
+                  onHoverIdx={setHoveredIdx}
+                  showDiff={showDiff}
+                  showSymbols={showSymbols}
+                  showNumbers={showNumbers}
+                />
               </div>
             </div>
 
@@ -261,6 +346,26 @@ export const App: React.FC = () => {
               activeStep={activeStep}
               onStepChange={step => setActiveStep(step)}
             />
+
+            {/* Accessibility & Display Controls */}
+            <div style={{ display: "flex", gap: 12, justifyContent: "center", fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={showSymbols}
+                  onChange={e => setShowSymbols(e.target.checked)}
+                />
+                Symbols (Accessible)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={showNumbers}
+                  onChange={e => setShowNumbers(e.target.checked)}
+                />
+                Tile Numbers
+              </label>
+            </div>
 
             {/* Move Snippet Palette */}
             <div className="palette-section">
@@ -307,9 +412,22 @@ export const App: React.FC = () => {
               <div className="theorem-sig">
                 <span>theorem level_{currentLevel.id} : Reaches start target := by</span>
               </div>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                Press Ctrl+Enter to Verify
-              </span>
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+                <span style={{
+                  fontSize: "0.72rem",
+                  fontFamily: "var(--font-mono)",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  background: currentMoveCount <= currentLevel.par ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)",
+                  color: currentMoveCount <= currentLevel.par ? "#34d399" : "#fbbf24",
+                  border: `1px solid ${currentMoveCount <= currentLevel.par ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`
+                }}>
+                  {currentMoveCount} / {currentLevel.par} Moves
+                </span>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                  Ctrl+Enter
+                </span>
+              </div>
             </div>
 
             <CodeEditor

@@ -2,6 +2,8 @@ import React, { useEffect, useRef } from "react";
 import { EditorState, StateField, StateEffect, RangeSet } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, keymap, Decoration, DecorationSet, GutterMarker, gutter } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { leanLanguage } from "../utils/leanSyntax.js";
 import { LineDiagnostic, BoardSnapshot } from "../types.js";
 
 interface CodeEditorProps {
@@ -140,6 +142,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         highlightActiveLineGutter(),
         highlightActiveLine(),
         history(),
+        leanLanguage,
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         gutter({
           class: "pq-status-gutter",
           markers: v => v.state.field(statusGutterField)

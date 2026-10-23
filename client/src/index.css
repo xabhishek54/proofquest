@@ -448,6 +448,84 @@ body {
   color: white;
 }
 
+/* Mismatch Indicator Badge */
+.mismatch-indicator {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  width: 14px;
+  height: 14px;
+  background: rgba(245, 158, 11, 0.9);
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.55rem;
+  color: #1e1b4b;
+}
+
+/* Hover Synced Tile */
+.tile.tile-hovered {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+  transform: translateY(-4px) scale(1.05);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.6) !important;
+  z-index: 20;
+}
+
+/* Diff Mismatch Pulse */
+.tile.tile-diff-mismatch {
+  animation: pulseMismatch 2s infinite ease-in-out;
+}
+
+@keyframes pulseMismatch {
+  0%, 100% {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(245, 158, 11, 0.6);
+  }
+}
+
+/* Lean CodeMirror Syntax Highlighting */
+.cm-s-lean .cm-keyword,
+.cm-editor .cm-keyword {
+  color: #c084fc !important;
+  font-weight: 600;
+}
+
+.cm-s-lean .cm-def,
+.cm-editor .cm-def {
+  color: #38bdf8 !important;
+  font-weight: 600;
+}
+
+.cm-s-lean .cm-atom,
+.cm-editor .cm-atom {
+  color: #fbbf24 !important;
+}
+
+.cm-s-lean .cm-comment,
+.cm-editor .cm-comment {
+  color: #64748b !important;
+  font-style: italic;
+}
+
+.cm-s-lean .cm-string,
+.cm-editor .cm-string {
+  color: #34d399 !important;
+}
+
+.cm-s-lean .cm-number,
+.cm-editor .cm-number {
+  color: #f472b6 !important;
+}
+
+.cm-s-lean .cm-variable,
+.cm-editor .cm-variable {
+  color: #f8fafc !important;
+}
+
 /* Step Timeline & Scrubber */
 .timeline-card {
   background: #090e1a;
