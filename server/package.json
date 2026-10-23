@@ -1,6 +1,7 @@
 {
   "name": "proofquest-server",
   "version": "1.0.0",
+  "type": "module",
   "description": "ProofQuest Lean 4 verification backend",
   "main": "dist/server.js",
   "scripts": {
