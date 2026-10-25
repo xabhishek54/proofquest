@@ -2,9 +2,43 @@ import React, { useEffect, useRef } from "react";
 import { EditorState, StateField, StateEffect, RangeSet } from "@codemirror/state";
 import { EditorView, lineNumbers, highlightActiveLineGutter, highlightActiveLine, keymap, Decoration, DecorationSet, GutterMarker, gutter } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { leanLanguage } from "../utils/leanSyntax.js";
 import { LineDiagnostic, BoardSnapshot } from "../types.js";
+
+// Custom dark-background syntax highlight style
+const darkHighlight = HighlightStyle.define([
+  { tag: tags.keyword,        color: "#C792EA", fontWeight: "600" },
+  { tag: tags.name,           color: "#E5EAF3" },
+  { tag: tags.variableName,   color: "#82AAFF" },
+  { tag: tags.typeName,       color: "#FFCB6B", fontWeight: "600" },
+  { tag: tags.propertyName,   color: "#82AAFF" },
+  { tag: tags.comment,        color: "#637777", fontStyle: "italic" },
+  { tag: tags.lineComment,    color: "#637777", fontStyle: "italic" },
+  { tag: tags.blockComment,   color: "#637777", fontStyle: "italic" },
+  { tag: tags.string,         color: "#C3E88D" },
+  { tag: tags.number,         color: "#F78C6C" },
+  { tag: tags.integer,        color: "#F78C6C" },
+  { tag: tags.operator,       color: "#89DDFF" },
+  { tag: tags.punctuation,    color: "#89DDFF" },
+  { tag: tags.bool,           color: "#FF5370" },
+  { tag: tags.atom,           color: "#89DDFF" },
+  { tag: tags.meta,           color: "#FFCB6B" },
+  { tag: tags.invalid,        color: "#FF5370", textDecoration: "underline" },
+]);
+
+// Base editor theme to anchor colors
+const darkEditorTheme = EditorView.theme({
+  "&": { background: "#182235", color: "#E5EAF3" },
+  ".cm-content": { caretColor: "#60A5FA", color: "#E5EAF3" },
+  ".cm-line": { color: "#E5EAF3" },
+  ".cm-gutters": { background: "#121A2A", color: "#475569", border: "none" },
+  ".cm-activeLineGutter": { background: "rgba(96,165,250,0.08)" },
+  ".cm-activeLine": { background: "rgba(255,255,255,0.04)" },
+  ".cm-selectionBackground, ::selection": { background: "rgba(40,95,232,0.25)" },
+  ".cm-cursor": { borderLeftColor: "#60A5FA" },
+});
 
 interface CodeEditorProps {
   code: string;
@@ -143,7 +177,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         highlightActiveLine(),
         history(),
         leanLanguage,
-        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        syntaxHighlighting(darkHighlight, { fallback: true }),
+        darkEditorTheme,
         gutter({
           class: "pq-status-gutter",
           markers: v => v.state.field(statusGutterField)

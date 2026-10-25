@@ -1021,6 +1021,11 @@ button {
 
 .cm-editor .cm-content {
   caret-color: #60A5FA;
+  color: #E5EAF3 !important;
+}
+
+.cm-editor .cm-line {
+  color: #E5EAF3;
 }
 
 /* Narrower & less prominent line number gutter */
