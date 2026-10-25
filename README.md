@@ -61,14 +61,6 @@
 
 ## Quickstart: Running ProofQuest
 
-### Option 1: One-Command Docker Setup (Recommended for Judges)
-```bash
-docker compose up --build
-```
-Open **`http://localhost:3001`** in your browser.
-
-### Option 2: Local Native Setup
-
 **Prerequisites:**
 - Node.js >= 20
 - Lean 4 toolchain via `elan` (`curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.16.0`)
@@ -76,7 +68,7 @@ Open **`http://localhost:3001`** in your browser.
 **Steps:**
 ```bash
 # 1. Build the Lean 4 library
-cd lean && ~/.elan/bin/lake build && cd ..
+cd lean && lake build && cd ..
 
 # 2. Build the client and server
 npm run build
@@ -84,7 +76,7 @@ npm run build
 # 3. Start the server (serves both API and frontend UI)
 npm start
 ```
-Visit **`http://localhost:3001`**.
+Open **`http://localhost:3001`** in your browser.
 
 ---
 
@@ -122,9 +114,9 @@ Expected output:
 
 | Level | Title | Core Concept | Moves Available | Par |
 |---|---|---|---|---|
-| **01** | First Brush | Tactic steps & goal completion | `paint`, `finish` | 2 |
-| **02** | Trade Places | State transformations with preconditions | `swap`, `finish` | 2 |
-| **03** | Swap & Paint | Sequencing and order of operations | `swap`, `paint`, `finish` | 3 |
+| **01** | First Brush | Tactic steps & goal completion | `paint`, `finish` | 1 |
+| **02** | Trade Places | State transformations with preconditions | `swap`, `finish` | 1 |
+| **03** | Swap & Paint | Sequencing and order of operations | `swap`, `paint`, `finish` | 2 |
 | **04** | Round and Round | Bulk transformations | `rotate_row`, `swap`, `paint`, `finish` | 2 |
 | **05** | Out of Bounds | Reading Lean diagnostics & fixing illegal moves | all | 2 |
 | **06** | Many Roads | Proof optimization & Par budget | all | 3 |

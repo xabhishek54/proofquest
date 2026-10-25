@@ -1,6 +1,5 @@
 import React from "react";
 import { BoardSpec } from "../types.js";
-import { Check, AlertCircle } from "lucide-react";
 
 interface BoardViewProps {
   board: BoardSpec;
@@ -10,16 +9,17 @@ interface BoardViewProps {
   onHoverIdx?: (idx: number | null) => void;
   showDiff?: boolean;
   showSymbols?: boolean;
-  showNumbers?: boolean;
+  showCoords?: boolean;
 }
 
-const COLOR_METADATA: Record<string, { symbol: string; letter: string; name: string }> = {
-  red: { symbol: "◆", letter: "R", name: "Red" },
-  blue: { symbol: "▲", letter: "B", name: "Blue" },
-  green: { symbol: "●", letter: "G", name: "Green" },
-  yellow: { symbol: "★", letter: "Y", name: "Yellow" },
-  purple: { symbol: "⬟", letter: "P", name: "Purple" },
-  orange: { symbol: "⬢", letter: "O", name: "Orange" }
+// Consistent white geometric symbols for maximum accessibility
+const TILE_META: Record<string, { symbol: string; label: string }> = {
+  red:    { symbol: "●", label: "Red" },
+  blue:   { symbol: "▲", label: "Blue" },
+  green:  { symbol: "◆", label: "Green" },
+  yellow: { symbol: "★", label: "Yellow" },
+  purple: { symbol: "⬟", label: "Purple" },
+  orange: { symbol: "⬢", label: "Orange" },
 };
 
 export const BoardView: React.FC<BoardViewProps> = ({
@@ -30,55 +30,89 @@ export const BoardView: React.FC<BoardViewProps> = ({
   onHoverIdx,
   showDiff = true,
   showSymbols = true,
-  showNumbers = true
+  showCoords = true,
 }) => {
-  const is4x4 = board.width === 4;
+  const w = board.width || 3;
+  const is4x4 = w === 4;
 
   return (
     <div
-      className={`board-grid-box ${is4x4 ? "grid-4" : "grid-3"}`}
+      className={`board-grid ${is4x4 ? "grid-4" : "grid-3"} ${isTarget ? "board-target-grid" : ""}`}
       role="grid"
-      aria-label={isTarget ? "Target Board" : "Current Board"}
-      onMouseLeave={() => onHoverIdx && onHoverIdx(null)}
+      aria-label={isTarget ? "Target reference board" : "Current board state"}
+      onMouseLeave={() => onHoverIdx?.(null)}
     >
-      {board.cells.map((cellColor, idx) => {
-        const meta = COLOR_METADATA[cellColor.toLowerCase()] || {
-          symbol: "■",
-          letter: cellColor[0]?.toUpperCase() || "?",
-          name: cellColor
-        };
+      {board.cells.map((color, idx) => {
+        const meta = TILE_META[color.toLowerCase()] ?? { symbol: "■", label: color };
+        const row = Math.floor(idx / w);
+        const col = idx % w;
+        const differs = !isTarget && target && target.cells[idx] !== color;
+        const hovered = hoveredIdx === idx;
 
-        const matchesTarget = !isTarget && target && target.cells[idx] === cellColor;
-        const differsFromTarget = !isTarget && target && target.cells[idx] !== cellColor;
-        const isHovered = hoveredIdx === idx;
+        // Highlight ONLY cells that differ with clear amber outline and indicator tag
+        const diffClass = (showDiff && !isTarget && differs) ? "tile-differs" : "";
 
         return (
-          <div
-            key={idx}
-            className={`tile tile-${cellColor.toLowerCase()} ${isHovered ? "tile-hovered" : ""} ${showDiff && differsFromTarget ? "tile-diff-mismatch" : ""}`}
-            title={`Tile ${idx}: ${meta.name} (${meta.letter})${!isTarget && target ? (matchesTarget ? " - Matches target" : ` - Target is ${target.cells[idx]}`) : ""}`}
-            role="gridcell"
-            aria-label={`Tile ${idx}, ${meta.name}`}
-            onMouseEnter={() => onHoverIdx && onHoverIdx(idx)}
-          >
-            {showNumbers && <span className="tile-index">{idx}</span>}
-            {showSymbols && <span className="tile-symbol">{meta.symbol}</span>}
-            <span className="tile-letter">{meta.letter}</span>
-
-            {showDiff && matchesTarget && (
-              <span className="match-indicator" title="Matches Target!">
-                <Check size={10} strokeWidth={3} />
-              </span>
-            )}
-
-            {showDiff && differsFromTarget && (
-              <span className="mismatch-indicator" title={`Needs to be ${target?.cells[idx]}`}>
-                <AlertCircle size={9} strokeWidth={3} />
-              </span>
+          <div key={idx} className="board-cell">
+            <div
+              className={`tile tile-${color.toLowerCase()} ${hovered ? "tile-hovered" : ""} ${diffClass}`}
+              role="gridcell"
+              aria-label={`(${row},${col}) ${meta.label}`}
+              title={`(${row},${col}) ${meta.label}${!isTarget && target ? (differs ? ` — Differs from target (${target.cells[idx]})` : " — Matches target") : ""}`}
+              onMouseEnter={() => onHoverIdx?.(idx)}
+            >
+              {showSymbols && <span className="tile-symbol">{meta.symbol}</span>}
+              {showDiff && !isTarget && differs && (
+                <span className="tile-diff-indicator" title={`Tile differs! Current: ${color}, Target: ${target?.cells[idx]}`}>
+                  ≠
+                </span>
+              )}
+            </div>
+            {showCoords && (
+              <span className="tile-coord-label">{row},{col}</span>
             )}
           </div>
         );
       })}
+    </div>
+  );
+};
+
+export const TileLegend: React.FC<{ colors: string[] }> = ({ colors }) => {
+  const unique = [...new Set(colors.map(c => c.toLowerCase()))];
+  const LEGEND_COLORS: Record<string, { cssVar: string; symbol: string }> = {
+    red:    { cssVar: "var(--tile-red)",    symbol: "●" },
+    blue:   { cssVar: "var(--tile-blue)",   symbol: "▲" },
+    green:  { cssVar: "var(--tile-green)",  symbol: "◆" },
+    yellow: { cssVar: "var(--tile-yellow)", symbol: "★" },
+    purple: { cssVar: "var(--tile-purple)", symbol: "⬟" },
+    orange: { cssVar: "var(--tile-orange)", symbol: "⬢" },
+  };
+
+  return (
+    <div className="tile-legend">
+      <span className="legend-label">Legend</span>
+      <div className="legend-items">
+        {unique.map(c => {
+          const l = LEGEND_COLORS[c];
+          if (!l) return null;
+          return (
+            <div key={c} className="legend-item" title={`${c} tile with geometric symbol ${l.symbol}`}>
+              <div className="legend-swatch" style={{ background: l.cssVar }}>
+                <span className="legend-swatch-sym">{l.symbol}</span>
+              </div>
+              <span className="legend-name">{c.charAt(0).toUpperCase() + c.slice(1)}</span>
+            </div>
+          );
+        })}
+        {/* Difference indicator legend */}
+        <div className="legend-item legend-diff-item" title="Orange outline and ≠ tag mark positions that differ from target">
+          <div className="legend-swatch legend-diff-swatch">
+            <span className="legend-diff-sym">≠</span>
+          </div>
+          <span className="legend-name" style={{ color: "var(--warning)", fontWeight: 500 }}>Differs</span>
+        </div>
+      </div>
     </div>
   );
 };

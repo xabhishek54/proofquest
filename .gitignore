@@ -22,3 +22,8 @@ Thumbs.db
 *.md
 !README.md
 !IMPLEMENTATION_PLAN.md
+
+# temporary files
+.tmp/
+lean/.tmp/
+

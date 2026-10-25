@@ -36,7 +36,7 @@ export const LEVELS: LevelData[] = [
       example: "paint 0 green\nfinish"
     },
     allowedMoves: ["paint", "finish"],
-    par: 2,
+    par: 1,
     start: {
       width: 3,
       height: 3,
@@ -55,7 +55,7 @@ export const LEVELS: LevelData[] = [
         "green", "yellow", "red"
       ]
     },
-    initialCode: "-- Welcome to ProofQuest! Every line is a verified Lean move.\n-- Change tile 0 to green, then finish the proof.\n",
+    initialCode: "-- Level 1: First Brush\n-- Change tile 0 to green, then finish the proof.\n",
     referenceSolution: "paint 0 green\nfinish",
     hints: [
       "Compare the current board with the target. Notice tile 0 (top-left) is red instead of green.",
@@ -74,7 +74,7 @@ export const LEVELS: LevelData[] = [
       example: "swap 0 1\nfinish"
     },
     allowedMoves: ["swap", "finish"],
-    par: 2,
+    par: 1,
     start: {
       width: 3,
       height: 3,
@@ -93,7 +93,7 @@ export const LEVELS: LevelData[] = [
         "green", "yellow", "red"
       ]
     },
-    initialCode: "-- Tiles 0 and 1 are swapped. Use 'swap' to fix them.\n",
+    initialCode: "-- Level 2: Trade Places\n-- Tiles 0 and 1 are swapped. Use 'swap 0 1' to fix them.\n",
     referenceSolution: "swap 0 1\nfinish",
     hints: [
       "Look at the first two tiles: tile 0 is blue and tile 1 is red, but the target has them reversed.",
@@ -112,7 +112,7 @@ export const LEVELS: LevelData[] = [
       example: "swap 0 1\npaint 8 green\nfinish"
     },
     allowedMoves: ["swap", "paint", "finish"],
-    par: 3,
+    par: 2,
     start: {
       width: 3,
       height: 3,
@@ -131,7 +131,7 @@ export const LEVELS: LevelData[] = [
         "green", "yellow", "green"
       ]
     },
-    initialCode: "-- Two differences to fix: swap tiles 0 and 1, and repaint tile 8.\n",
+    initialCode: "-- Level 3: Swap & Paint (Par: 2 moves)\n-- 1. Swap tiles 0 and 1 to fix the top row.\n-- 2. Repaint tile 8 to green.\n-- 3. finish\n",
     referenceSolution: "swap 0 1\npaint 8 green\nfinish",
     hints: [
       "There are two discrepancies: tiles 0 & 1 need swapping, and tile 8 (bottom-right) should be green.",

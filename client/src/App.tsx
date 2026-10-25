@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-  Play, RotateCcw, BookOpen, Star, Sparkles, ChevronRight,
-  Volume2, VolumeX, Layers, Lightbulb
+  Play, RotateCcw, BookOpen, Star, ChevronDown, ChevronUp,
+  Volume2, VolumeX, Cpu, HelpCircle
 } from "lucide-react";
-import { BoardView } from "./components/BoardView.js";
+import { BoardView, TileLegend } from "./components/BoardView.js";
 import { CodeEditor } from "./components/CodeEditor.js";
 import { MessagePanel } from "./components/MessagePanel.js";
 import { StepTimeline } from "./components/StepTimeline.js";
@@ -11,6 +11,7 @@ import { HintsDrawer } from "./components/HintsDrawer.js";
 import { RawOutputModal } from "./components/RawOutputModal.js";
 import { ConceptCardModal } from "./components/ConceptCardModal.js";
 import { WinModal } from "./components/WinModal.js";
+import { ManualModal } from "./components/ManualModal.js";
 import { LevelData, VerificationResult, BoardSpec } from "./types.js";
 import { sound } from "./utils/audio.js";
 
@@ -24,112 +25,133 @@ export const App: React.FC = () => {
   const [usedHints, setUsedHints] = useState<boolean>(false);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
-  // Settings & Toggles
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const [showDiff, setShowDiff] = useState<boolean>(true);
   const [showSymbols, setShowSymbols] = useState<boolean>(true);
-  const [showNumbers, setShowNumbers] = useState<boolean>(true);
+  const [showCoords, setShowCoords] = useState<boolean>(true);
 
-  // Modals state
   const [isRawModalOpen, setIsRawModalOpen] = useState<boolean>(false);
   const [isConceptModalOpen, setIsConceptModalOpen] = useState<boolean>(false);
+  const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
   const [isWinModalOpen, setIsWinModalOpen] = useState<boolean>(false);
+  const [hintsTrayOpen, setHintsTrayOpen] = useState<boolean>(false);
+  const [showHint, setShowHint] = useState<boolean>(false);
+  const [levelMenuOpen, setLevelMenuOpen] = useState<boolean>(false);
+  const levelMenuRef = useRef<HTMLDivElement>(null);
 
-  // Completed levels & stars from localStorage
   const [starsMap, setStarsMap] = useState<Record<number, number>>(() => {
-    try {
-      const saved = localStorage.getItem("pq_stars");
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
+    try { return JSON.parse(localStorage.getItem("pq_stars") || "{}"); }
+    catch { return {}; }
   });
 
-  // Toggle sound
-  const handleToggleAudio = () => {
-    sound.enabled = !audioEnabled;
-    setAudioEnabled(!audioEnabled);
-  };
-
-  // Fetch all levels on mount
+  // Close level dropdown on outside click
   useEffect(() => {
-    fetch("/api/levels")
-      .then(res => res.json())
-      .then(data => {
-        if (data.levels && Array.isArray(data.levels)) {
-          setLevels(data.levels);
-        }
-      })
-      .catch(err => console.error("Failed to load levels list:", err));
+    const handler = (e: MouseEvent) => {
+      if (levelMenuRef.current && !levelMenuRef.current.contains(e.target as Node)) {
+        setLevelMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Fetch full details of the active level
-  const loadLevel = useCallback((lvlId: number) => {
-    fetch(`/api/levels/${lvlId}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.level) {
-          const lvl: LevelData = data.level;
-          setCurrentLevelId(lvlId);
-          setCode(lvl.initialCode || "");
+  const handleToggleAudio = () => {
+    sound.enabled = !audioEnabled;
+    setAudioEnabled(a => !a);
+  };
+
+  // Load level list
+  useEffect(() => {
+    fetch("/api/levels")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.levels)) setLevels(d.levels); })
+      .catch(console.error);
+  }, []);
+
+  // Load a level's details
+  const loadLevel = useCallback((id: number) => {
+    fetch(`/api/levels/${id}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.level) {
+          setCurrentLevelId(id);
+          setCode(d.level.initialCode || "");
           setResult(null);
           setActiveStep(0);
           setUsedHints(false);
           setIsWinModalOpen(false);
           setHoveredIdx(null);
+          setLevelMenuOpen(false);
         }
       })
-      .catch(err => console.error(`Failed to load level ${lvlId}:`, err));
+      .catch(console.error);
   }, []);
 
-  useEffect(() => {
-    loadLevel(currentLevelId);
-  }, [currentLevelId, loadLevel]);
+  useEffect(() => { loadLevel(currentLevelId); }, [currentLevelId, loadLevel]);
 
-  const currentLevel = levels.find(l => l.id === currentLevelId) || levels[0];
+  const currentLevel = levels.find(l => l.id === currentLevelId) ?? levels[0];
 
-  // Count active player tactic moves currently in code
   const currentMoveCount = useMemo(() => {
-    const lines = code.split("\n").map(l => l.trim());
-    return lines.filter(l => {
-      if (l === "" || l.startsWith("--")) return false;
+    return code.split("\n").map(l => l.trim()).filter(l => {
+      if (!l || l.startsWith("--")) return false;
       if (l.startsWith("macro ") || l.startsWith("local macro ")) return false;
+      if (l === "finish") return false;
       return true;
     }).length;
   }, [code]);
 
-  // Execute Lean verification
-  const handleVerify = async () => {
+  const displayedBoard: BoardSpec = useMemo(() => {
+    if (!currentLevel) return { width: 3, height: 3, cells: [] };
+    if (!result?.boardSnapshots?.length || activeStep === 0) return currentLevel.start;
+    const snap = result.boardSnapshots[activeStep - 1];
+    return snap?.board ?? currentLevel.start;
+  }, [currentLevel, result, activeStep]);
+
+  const diffCount = useMemo(() => {
+    if (!currentLevel || !displayedBoard) return 0;
+    let count = 0;
+    for (let i = 0; i < displayedBoard.cells.length; i++) {
+      if (displayedBoard.cells[i] !== currentLevel.target.cells[i]) count++;
+    }
+    return count;
+  }, [displayedBoard, currentLevel]);
+
+  const suggestedMove = useMemo(() => {
+    if (!currentLevel) return { hint: "Try painting or swapping tiles", code: "finish" };
+    switch (currentLevel.id) {
+      case 1: return { hint: "Paint top-left tile 0 green, then finish", code: "paint 0 green" };
+      case 2: return { hint: "Swap tiles 0 and 1, then finish", code: "swap 0 1" };
+      case 3: return { hint: "Swap tiles 0 and 1 first, then paint tile 8 green", code: "swap 0 1" };
+      case 4: return { hint: "Rotate top row 0 to the right", code: "rotate_row 0" };
+      case 5: return { hint: "Fix illegal index: swap tile 0 with tile 2", code: "swap 0 2" };
+      case 6: return { hint: "Rotate row 0, then rotate row 1", code: "rotate_row 0" };
+      case 7: return { hint: "Call helper macro cross_swap", code: "cross_swap" };
+      case 8: return { hint: "Rotate row 0 twice and row 2 twice", code: "rotate_row 0" };
+      case 9: return { hint: "Invoke composite macro swap_all", code: "swap_all" };
+      case 10: return { hint: "Rotate row 0, then swap tiles 5 and 6", code: "rotate_row 0" };
+      default: return { hint: "Write a tactic move, then finish", code: "finish" };
+    }
+  }, [currentLevel]);
+
+  const handleVerify = useCallback(async () => {
     if (!currentLevel || isVerifying) return;
     setIsVerifying(true);
-
     try {
-      const response = await fetch("/api/verify", {
+      const res = await fetch("/api/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          levelId: currentLevel.id,
-          code
-        })
+        body: JSON.stringify({ levelId: currentLevel.id, code }),
       });
-
-      const data: VerificationResult = await response.json();
+      const data: VerificationResult = await res.json();
       setResult(data);
-
-      if (data.boardSnapshots && data.boardSnapshots.length > 0) {
-        setActiveStep(data.boardSnapshots.length);
-      } else {
-        setActiveStep(0);
-      }
+      setActiveStep(data.boardSnapshots?.length ?? 0);
 
       if (data.success) {
         sound.playSuccess();
         const stars = !usedHints && data.isPar ? 3 : data.isPar || !usedHints ? 2 : 1;
         setStarsMap(prev => {
           const next = { ...prev, [currentLevel.id]: Math.max(prev[currentLevel.id] || 0, stars) };
-          try {
-            localStorage.setItem("pq_stars", JSON.stringify(next));
-          } catch {}
+          try { localStorage.setItem("pq_stars", JSON.stringify(next)); } catch {}
           return next;
         });
         setIsWinModalOpen(true);
@@ -139,179 +161,161 @@ export const App: React.FC = () => {
     } catch (err: any) {
       sound.playError();
       setResult({
-        success: false,
-        status: "error",
-        summary: `Connection error: ${err?.message || "Failed to contact Lean verification service"}`,
-        diagnostics: [],
-        boardSnapshots: [],
-        matchesTarget: false,
-        movesCount: 0,
-        isPar: false,
-        latencyMs: 0,
-        rawOutput: String(err)
+        success: false, status: "error",
+        summary: `Connection error: ${err?.message || ""}`,
+        diagnostics: [], boardSnapshots: [],
+        matchesTarget: false, movesCount: 0, isPar: false,
+        latencyMs: 0, rawOutput: String(err),
       });
     } finally {
       setIsVerifying(false);
     }
-  };
+  }, [currentLevel, isVerifying, code, usedHints]);
 
-  // Keyboard shortcut listener
+  // Keyboard shortcuts
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleVerify();
-      }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); handleVerify(); }
       if (e.key === "Escape") {
         setIsRawModalOpen(false);
         setIsConceptModalOpen(false);
+        setIsManualModalOpen(false);
         setIsWinModalOpen(false);
+        setLevelMenuOpen(false);
       }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [handleVerify]);
 
-  // Determine which board to display based on timeline scrubber
-  const displayedBoard: BoardSpec = useMemo(() => {
-    if (!currentLevel) {
-      return { width: 3, height: 3, cells: [] };
-    }
-    if (!result || !result.boardSnapshots || result.boardSnapshots.length === 0 || activeStep === 0) {
-      return currentLevel.start;
-    }
-    const snap = result.boardSnapshots[activeStep - 1];
-    return snap ? snap.board : currentLevel.start;
-  }, [currentLevel, result, activeStep]);
-
-  // Insert tactic template from palette
-  const handleInsertMove = (moveSnippet: string) => {
-    sound.playInsert();
+  const handleInsert = (snippet: string) => {
+    sound.playInsert?.();
     setCode(prev => {
-      const trimmed = prev.trimEnd();
-      return trimmed === "" ? moveSnippet + "\n" : trimmed + "\n" + moveSnippet + "\n";
+      const t = prev.trimEnd();
+      return t ? t + "\n" + snippet + "\n" : snippet + "\n";
     });
+  };
+
+  const handleReset = () => {
+    if (currentLevel) {
+      sound.playInsert?.();
+      setCode(currentLevel.initialCode || "");
+      setResult(null); setActiveStep(0); setUsedHints(false);
+    }
   };
 
   const handleNextLevel = () => {
     setIsWinModalOpen(false);
-    if (currentLevelId < levels.length) {
-      setCurrentLevelId(currentLevelId + 1);
-    }
-  };
-
-  const handleResetLevel = () => {
-    if (currentLevel) {
-      sound.playInsert();
-      setCode(currentLevel.initialCode || "");
-      setResult(null);
-      setActiveStep(0);
-      setUsedHints(false);
-    }
+    if (currentLevelId < levels.length) setCurrentLevelId(currentLevelId + 1);
   };
 
   if (!currentLevel) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh" }}>
-        <p style={{ color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>Loading ProofQuest...</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "var(--bg)" }}>
+        <span style={{ color: "var(--text-3)", fontFamily: "var(--font-mono)", fontSize: 13 }}>Loading ProofQuest…</span>
       </div>
     );
   }
 
-  const currentLevelStars = starsMap[currentLevel.id] || 0;
+  const allColors = [...(currentLevel.start?.cells ?? []), ...(currentLevel.target?.cells ?? [])];
+  const snapshots = result?.boardSnapshots ?? [];
+  const totalSteps = snapshots.length;
+  const atPar = currentMoveCount <= currentLevel.par;
 
   return (
-    <div>
-      {/* Top Navigation Bar */}
-      <header className="app-header">
-        <div className="brand-section">
-          <div className="brand-logo">
-            <Sparkles size={20} color="white" />
-          </div>
-          <div>
-            <div className="brand-title">ProofQuest</div>
-            <div className="brand-tagline">Every Move Must Be Proven</div>
-          </div>
+    <div className="app-shell">
+      {/* ── Navigation Bar ── */}
+      <nav className="app-nav">
+        {/* Brand */}
+        <div className="nav-brand">
+          <img src="/logo.png" alt="ProofQuest" className="nav-logo-img" />
+          <span className="nav-name">ProofQuest</span>
         </div>
 
-        <div className="header-center">
-          <div className="level-badge">
-            <span>Level {currentLevel.id}: {currentLevel.title}</span>
-            <div className="star-rating">
-              {[1, 2, 3].map(s => (
-                <Star
-                  key={s}
-                  size={15}
-                  fill={s <= currentLevelStars ? "#fbbf24" : "none"}
-                  color={s <= currentLevelStars ? "#fbbf24" : "#475569"}
-                />
+        {/* Center: Compact Level Selector Pill */}
+        <div className="nav-center" ref={levelMenuRef} style={{ position: "relative" }}>
+          <button
+            className="nav-level-pill"
+            onClick={() => setLevelMenuOpen(o => !o)}
+            aria-label="Select level"
+          >
+            <span className="pill-level-id">Level {currentLevel.id}</span>
+            <span className="pill-sep">·</span>
+            <span className="pill-title">{currentLevel.title}</span>
+            <span className="pill-count">{currentLevel.id}/{levels.length}</span>
+            <ChevronDown size={13} color="var(--text-3)" />
+          </button>
+
+          {/* Level dropdown */}
+          {levelMenuOpen && (
+            <div className="level-list-dropdown">
+              {levels.map(lvl => (
+                <div
+                  key={lvl.id}
+                  className={`level-list-item ${lvl.id === currentLevel.id ? "active" : ""}`}
+                  onClick={() => loadLevel(lvl.id)}
+                >
+                  <span className="ll-num">{lvl.id < 10 ? `0${lvl.id}` : lvl.id}</span>
+                  <span className="ll-name">{lvl.title}</span>
+                  <div className="ll-stars">
+                    {starsMap[lvl.id] > 0 && [1,2,3].map(s => (
+                      <Star key={s} size={10}
+                        fill={s <= (starsMap[lvl.id] || 0) ? "#eab308" : "none"}
+                        color={s <= (starsMap[lvl.id] || 0) ? "#eab308" : "#d1d5db"}
+                      />
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-          </div>
+          )}
         </div>
 
-        <div className="header-actions">
-          <button
-            className="btn btn-secondary"
-            onClick={handleToggleAudio}
-            title={audioEnabled ? "Mute audio sound effects" : "Unmute audio sound effects"}
-            style={{ padding: "8px 10px" }}
-          >
-            {audioEnabled ? <Volume2 size={16} color="#38bdf8" /> : <VolumeX size={16} color="#64748b" />}
+        {/* Actions */}
+        <div className="nav-actions">
+          <button className="btn btn-outline btn-icon" onClick={handleToggleAudio} title={audioEnabled ? "Mute audio" : "Unmute audio"}>
+            {audioEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
           </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => setShowDiff(!showDiff)}
-            title={showDiff ? "Hide visual diff indicators" : "Show visual diff indicators"}
-            style={{ padding: "8px 10px" }}
-          >
-            <Layers size={16} color={showDiff ? "#10b981" : "#64748b"} />
+          <button className="btn btn-outline" onClick={() => setIsManualModalOpen(true)}>
+            <HelpCircle size={14} /> Manual
           </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => setIsConceptModalOpen(true)}
-            title="Read concept card for this level"
-          >
-            <BookOpen size={16} /> Concept
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleResetLevel}
-            title="Reset code to initial state"
-          >
-            <RotateCcw size={16} /> Reset
+          {currentLevel.conceptCard && (
+            <button className="btn btn-outline" onClick={() => setIsConceptModalOpen(true)}>
+              <BookOpen size={14} /> Concept
+            </button>
+          )}
+          <button className="btn btn-outline" onClick={handleReset} title="Reset code to initial state">
+            <RotateCcw size={13} /> Reset
           </button>
           <button
             className="btn btn-primary"
             onClick={handleVerify}
             disabled={isVerifying}
-            title="Run proof in Lean 4 sandbox (Ctrl+Enter)"
+            title="Run proof verification (Ctrl+Enter)"
           >
-            <Play size={16} /> {isVerifying ? "Verifying..." : "Run Proof"}
+            <Play size={14} /> {isVerifying ? "Checking…" : "Run proof"}
           </button>
         </div>
-      </header>
+      </nav>
 
-      {/* Main 3-Column Layout */}
-      <main className="main-container">
-        {/* Left Column: Boards, Scrubber, Palette */}
-        <section className="panel-card" aria-label="Game Boards">
-          <div className="panel-header">
-            <div className="panel-title">
-              <span>Visual Proof State</span>
-            </div>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                Par: {currentLevel.par} Moves
-              </span>
-            </div>
+      {/* ── Main Two-Panel Layout ── */}
+      <div className="app-content">
+
+        {/* ── Left Card: Board State ── */}
+        <div className="card board-card">
+          <div className="card-header">
+            <span className="card-title">Board state</span>
+            <span className="card-meta">
+              Step {activeStep} of {totalSteps}
+            </span>
           </div>
 
-          <div className="boards-wrapper">
+          <div className="board-panel">
+            {/* Boards side by side with increased gap */}
             <div className="boards-dual">
-              <div className="board-container">
-                <div className="board-label active">
-                  Current Board {activeStep > 0 && `(Step ${activeStep})`}
+              <div className="board-section">
+                <div className="board-section-title">
+                  <span>Current board</span>
                 </div>
                 <BoardView
                   board={displayedBoard}
@@ -320,13 +324,13 @@ export const App: React.FC = () => {
                   onHoverIdx={setHoveredIdx}
                   showDiff={showDiff}
                   showSymbols={showSymbols}
-                  showNumbers={showNumbers}
+                  showCoords={showCoords}
                 />
               </div>
 
-              <div className="board-container">
-                <div className="board-label">
-                  Target Board
+              <div className="board-section board-reference-card">
+                <div className="board-section-title">
+                  <span>Target reference</span>
                 </div>
                 <BoardView
                   board={currentLevel.target}
@@ -335,202 +339,202 @@ export const App: React.FC = () => {
                   onHoverIdx={setHoveredIdx}
                   showDiff={showDiff}
                   showSymbols={showSymbols}
-                  showNumbers={showNumbers}
+                  showCoords={showCoords}
                 />
               </div>
             </div>
 
-            {/* Intermediate Board Step Timeline */}
+            {/* Display options row */}
+            <div className="board-options-row">
+              <label className="option-check-label">
+                <input type="checkbox" checked={showCoords} onChange={e => setShowCoords(e.target.checked)} />
+                <span>Coordinates</span>
+              </label>
+              <label className="option-check-label">
+                <input type="checkbox" checked={showSymbols} onChange={e => setShowSymbols(e.target.checked)} />
+                <span>Symbols</span>
+              </label>
+              <label className="option-check-label">
+                <input type="checkbox" checked={showDiff} onChange={e => setShowDiff(e.target.checked)} />
+                <span>Difference marker</span>
+              </label>
+            </div>
+
+            {/* Step Status & Tile Differences */}
+            <div className="board-step-card">
+              <div className="step-card-header">
+                <span className="step-card-badge">
+                  {activeStep === 0 ? "Initial Board" : `Step ${activeStep} of ${totalSteps}`}
+                </span>
+                <span className={`step-diff-badge ${diffCount === 0 ? "match" : ""}`}>
+                  {diffCount === 0 ? "Matches target" : `${diffCount} differ`}
+                </span>
+              </div>
+              <div className="step-card-desc">
+                {activeStep === 0 ? (
+                  <span>Initial state · {diffCount} {diffCount === 1 ? "tile differs" : "tiles differ"}</span>
+                ) : (
+                  <span>
+                    After: <code>{snapshots[activeStep - 1] ? (code.split("\n")[snapshots[activeStep - 1].playerLine - 1]?.trim() || `Step ${activeStep}`) : `Step ${activeStep}`}</code>
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* History / Step scrubber with code line */}
             <StepTimeline
-              snapshots={result?.boardSnapshots || []}
+              snapshots={snapshots}
               activeStep={activeStep}
-              onStepChange={step => setActiveStep(step)}
+              onStepChange={setActiveStep}
+              code={code}
             />
 
-            {/* Accessibility & Display Controls */}
-            <div style={{ display: "flex", gap: 12, justifyContent: "center", fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={showSymbols}
-                  onChange={e => setShowSymbols(e.target.checked)}
-                />
-                Symbols (Accessible)
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={showNumbers}
-                  onChange={e => setShowNumbers(e.target.checked)}
-                />
-                Tile Numbers
-              </label>
-            </div>
+            {/* Tile legend */}
+            <TileLegend colors={allColors} />
+          </div>
+        </div>
 
-            {/* Move Snippet Palette */}
-            <div className="palette-section">
-              <div className="palette-title">Available Tactics for this Level</div>
-              <div className="palette-chips">
-                {currentLevel.allowedMoves.includes("swap") && (
-                  <button className="palette-chip" onClick={() => handleInsertMove("swap 0 1")}>
-                    + swap i j
-                  </button>
-                )}
-                {currentLevel.allowedMoves.includes("paint") && (
-                  <button className="palette-chip" onClick={() => handleInsertMove("paint 0 green")}>
-                    + paint idx color
-                  </button>
-                )}
-                {currentLevel.allowedMoves.includes("rotate_row") && (
-                  <button className="palette-chip" onClick={() => handleInsertMove("rotate_row 0")}>
-                    + rotate_row r
-                  </button>
-                )}
-                {currentLevel.allowedMoves.includes("finish") && (
-                  <button className="palette-chip" onClick={() => handleInsertMove("finish")}>
-                    + finish
-                  </button>
-                )}
-                {currentLevel.allowedMoves.includes("macro") && (
-                  <button
-                    className="palette-chip"
-                    onClick={() => handleInsertMove('macro "my_helper" : tactic => `(tactic| (swap 0 1 ; swap 1 2))')}
-                    style={{ color: "#a855f7", borderColor: "rgba(168, 85, 247, 0.4)" }}
-                  >
-                    + macro helper
-                  </button>
-                )}
+        {/* ── Right Card: Lean Workspace ── */}
+        <div className="card editor-card">
+          {/* Card header */}
+          <div className="editor-card-header">
+            <span className="editor-title">Lean workspace</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div className="lean-badge">
+                <Cpu size={12} />
+                Lean 4.16
               </div>
+              <span className={`move-count-badge ${atPar ? "at-par" : "over-par"}`}>
+                Moves: {currentMoveCount} / {currentLevel.par} par
+              </span>
             </div>
           </div>
-        </section>
 
-        {/* Center Column: Proof Code Editor & Feedback */}
-        <section className="panel-card" aria-label="Proof Code Editor">
-          <div className="editor-wrapper">
-            <div className="editor-header-bar">
-              <div className="theorem-sig">
-                <span>theorem level_{currentLevel.id} : Reaches start target := by</span>
-              </div>
-              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
-                <span style={{
-                  fontSize: "0.72rem",
-                  fontFamily: "var(--font-mono)",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  background: currentMoveCount <= currentLevel.par ? "rgba(16, 185, 129, 0.15)" : "rgba(245, 158, 11, 0.15)",
-                  color: currentMoveCount <= currentLevel.par ? "#34d399" : "#fbbf24",
-                  border: `1px solid ${currentMoveCount <= currentLevel.par ? "rgba(16, 185, 129, 0.3)" : "rgba(245, 158, 11, 0.3)"}`
-                }}>
-                  {currentMoveCount} / {currentLevel.par} Moves
-                </span>
-                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-                  Ctrl+Enter
-                </span>
+          {/* Tactic insert bar */}
+          <div className="tactic-bar">
+            <span className="tactic-bar-label">Insert:</span>
+            {currentLevel.allowedMoves.includes("swap") && (
+              <button className="tactic-chip" onClick={() => handleInsert("swap 0 1")}>swap i j</button>
+            )}
+            {currentLevel.allowedMoves.includes("paint") && (
+              <button className="tactic-chip" onClick={() => handleInsert("paint 0 green")}>paint i color</button>
+            )}
+            {currentLevel.allowedMoves.includes("rotate_row") && (
+              <button className="tactic-chip" onClick={() => handleInsert("rotate_row 0")}>rotate_row r</button>
+            )}
+            {currentLevel.allowedMoves.includes("finish") && (
+              <button className="tactic-chip" onClick={() => handleInsert("finish")}>finish</button>
+            )}
+            {currentLevel.allowedMoves.includes("macro") && (
+              <button
+                className="tactic-chip tactic-chip-macro"
+                onClick={() => handleInsert('macro "helper" : tactic => `(tactic| (swap 0 1 ; swap 1 2))')}
+              >
+                macro
+              </button>
+            )}
+
+            {/* Hidable Hint Button */}
+            <button
+              type="button"
+              className={`tactic-chip tactic-chip-hint ${showHint ? "active" : ""}`}
+              onClick={() => setShowHint(s => !s)}
+              title={showHint ? "Hide hint" : "Show hint"}
+              style={{ marginLeft: "auto" }}
+            >
+              <HelpCircle size={11} style={{ marginRight: 3, verticalAlign: -1 }} />
+              {showHint ? "Hide hint" : "Hint"}
+            </button>
+          </div>
+
+          {/* Hidable First-Use Suggestion Strip */}
+          {showHint && (
+            <div className="editor-suggest-bar">
+              <span className="suggest-hint">{suggestedMove.hint}</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  className="suggest-insert-btn"
+                  onClick={() => handleInsert(suggestedMove.code)}
+                  title={`Insert ${suggestedMove.code}`}
+                >
+                  Insert: <code>{suggestedMove.code}</code>
+                </button>
+                <button
+                  type="button"
+                  className="suggest-close-btn"
+                  onClick={() => setShowHint(false)}
+                  title="Hide hint"
+                >
+                  ✕
+                </button>
               </div>
             </div>
+          )}
 
+          {/* Dark editor */}
+          <div className="editor-area">
             <CodeEditor
               code={code}
               onChange={setCode}
-              diagnostics={result?.diagnostics || []}
-              boardSnapshots={result?.boardSnapshots || []}
+              diagnostics={result?.diagnostics ?? []}
+              boardSnapshots={snapshots}
               onVerify={handleVerify}
             />
-
-            <MessagePanel
-              result={result}
-              isVerifying={isVerifying}
-              onOpenRawOutput={() => setIsRawModalOpen(true)}
-            />
-          </div>
-        </section>
-
-        {/* Right Column: Level Select, Concept Card, Hints */}
-        <aside className="sidebar-right" aria-label="Level Progression and Hints">
-          {/* Level Progression */}
-          <div className="panel-card">
-            <div className="panel-header">
-              <div className="panel-title">Levels (1 to 10)</div>
-              <span style={{ fontSize: "0.75rem", color: "var(--accent-cyan)", fontFamily: "var(--font-mono)" }}>
-                {Object.keys(starsMap).length} / {levels.length} Solved
-              </span>
-            </div>
-            <div className="level-list">
-              {levels.map(lvl => {
-                const isSelected = lvl.id === currentLevel.id;
-                const stars = starsMap[lvl.id] || 0;
-
-                return (
-                  <div
-                    key={lvl.id}
-                    className={`level-item ${isSelected ? "active" : ""}`}
-                    onClick={() => loadLevel(lvl.id)}
-                  >
-                    <div className="level-item-left">
-                      <span className="level-num">{lvl.id < 10 ? `0${lvl.id}` : lvl.id}</span>
-                      <span className="level-title">{lvl.title}</span>
-                    </div>
-                    <div className="level-item-status">
-                      {stars > 0 ? (
-                        <div style={{ display: "flex", gap: 2 }}>
-                          {[1, 2, 3].map(s => (
-                            <Star
-                              key={s}
-                              size={12}
-                              fill={s <= stars ? "#fbbf24" : "none"}
-                              color={s <= stars ? "#fbbf24" : "#475569"}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <ChevronRight size={14} color="var(--text-dim)" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           </div>
 
-          {/* Quick Concept Summary */}
-          {currentLevel.conceptCard && (
-            <div className="concept-card">
-              <div className="concept-title">
-                <BookOpen size={15} />
-                {currentLevel.conceptCard.title}
-              </div>
-              <div className="concept-desc">
-                {currentLevel.concept}
-              </div>
-            </div>
-          )}
+          {/* Status footer inside card */}
+          <MessagePanel
+            result={result}
+            isVerifying={isVerifying}
+            onOpenRawOutput={() => setIsRawModalOpen(true)}
+            diffCount={diffCount}
+          />
 
-          {/* Tiered Hints */}
-          {currentLevel.hints && (
-            <div className="panel-card">
-              <div className="panel-header">
-                <div className="panel-title">
-                  <Lightbulb size={16} color="#fbbf24" />
-                  Hints (3 Tiers)
+          {/* Collapsible Hints & Concepts tray */}
+          {(currentLevel.hints || currentLevel.conceptCard) && (
+            <div className={`editor-hints-tray ${hintsTrayOpen ? "open" : ""}`}>
+              <button
+                type="button"
+                className="hints-tray-toggle"
+                onClick={() => setHintsTrayOpen(o => !o)}
+                title="Toggle hints and concept explanation"
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <HelpCircle size={13} color="var(--accent)" />
+                  <span>Hints &amp; Concept</span>
                 </div>
-              </div>
-              <HintsDrawer
-                hints={currentLevel.hints}
-                onUseHint={() => setUsedHints(true)}
-              />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, color: "var(--text-3)" }}>
+                    {hintsTrayOpen ? "Hide" : "Need help?"}
+                  </span>
+                  {hintsTrayOpen ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                </div>
+              </button>
+              {hintsTrayOpen && (
+                <div className="hints-tray-content">
+                  {currentLevel.concept && (
+                    <div>
+                      <div className="hints-section-title">Concept</div>
+                      <p style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.55 }}>{currentLevel.concept}</p>
+                    </div>
+                  )}
+                  {currentLevel.hints && (
+                    <div>
+                      <div className="hints-section-title">Hints</div>
+                      <HintsDrawer hints={currentLevel.hints} onUseHint={() => setUsedHints(true)} />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
-        </aside>
-      </main>
+        </div>
+      </div>
 
-      {/* Modals */}
-      <RawOutputModal
-        isOpen={isRawModalOpen}
-        onClose={() => setIsRawModalOpen(false)}
-        rawOutput={result?.rawOutput || ""}
-      />
-
+      {/* ── Modals ── */}
+      <ManualModal isOpen={isManualModalOpen} onClose={() => setIsManualModalOpen(false)} />
+      <RawOutputModal isOpen={isRawModalOpen} onClose={() => setIsRawModalOpen(false)} rawOutput={result?.rawOutput ?? ""} />
       {currentLevel.conceptCard && (
         <ConceptCardModal
           isOpen={isConceptModalOpen}
@@ -539,7 +543,6 @@ export const App: React.FC = () => {
           levelTitle={currentLevel.title}
         />
       )}
-
       {result && (
         <WinModal
           isOpen={isWinModalOpen}
@@ -547,14 +550,12 @@ export const App: React.FC = () => {
           result={result}
           usedHints={usedHints}
           onNextLevel={handleNextLevel}
-          onReplay={() => {
-            setIsWinModalOpen(false);
-            handleResetLevel();
-          }}
+          onReplay={() => { setIsWinModalOpen(false); handleReset(); }}
           onClose={() => setIsWinModalOpen(false)}
         />
       )}
     </div>
   );
 };
+
 export default App;

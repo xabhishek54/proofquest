@@ -1,55 +1,35 @@
 import React, { useState } from "react";
-import { Lightbulb, ChevronDown, ChevronUp, Eye } from "lucide-react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 interface HintsDrawerProps {
   hints: [string, string, string];
-  onUseHint: (tierIndex: number) => void;
+  onUseHint: (tier: number) => void;
 }
 
 export const HintsDrawer: React.FC<HintsDrawerProps> = ({ hints, onUseHint }) => {
-  const [unlockedTiers, setUnlockedTiers] = useState<boolean[]>([false, false, false]);
+  const [open, setOpen] = useState<boolean[]>([false, false, false]);
+  const labels = ["Hint 1", "Hint 2", "Solution"];
 
-  const toggleTier = (index: number) => {
-    setUnlockedTiers(prev => {
-      const next = [...prev];
-      next[index] = !next[index];
-      return next;
+  const toggle = (i: number) => {
+    setOpen(prev => {
+      const n = [...prev];
+      n[i] = !n[i];
+      return n;
     });
-    onUseHint(index);
+    if (!open[i]) onUseHint(i);
   };
 
-  const tierLabels = [
-    { name: "Tier 1: Gentle Nudge", desc: "A subtle pointer to notice discrepancies." },
-    { name: "Tier 2: Tactic Clue", desc: "Which tactics to choose and order." },
-    { name: "Tier 3: Full Solution", desc: "Exact moves to prove the level." }
-  ];
-
   return (
-    <div className="hints-container">
-      {hints.map((hintText, idx) => {
-        const isUnlocked = unlockedTiers[idx];
-        const label = tierLabels[idx];
-
-        return (
-          <div key={idx} className="hint-tier">
-            <div className="hint-header" onClick={() => toggleTier(idx)}>
-              <span className="hint-title">
-                <Lightbulb size={14} color={isUnlocked ? "#fbbf24" : "#94a3b8"} />
-                {label.name}
-              </span>
-              {isUnlocked ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            </div>
-
-            {isUnlocked ? (
-              <div className="hint-text">{hintText}</div>
-            ) : (
-              <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
-                <Eye size={12} /> Click to reveal {label.desc}
-              </div>
-            )}
+    <div className="hints-list">
+      {hints.map((text, i) => (
+        <div key={i} className="hint-row">
+          <div className="hint-header-row" onClick={() => toggle(i)}>
+            <span className="hint-tier-lbl">{labels[i]}</span>
+            {open[i] ? <ChevronUp size={13} color="var(--text-3)" /> : <ChevronDown size={13} color="var(--text-3)" />}
           </div>
-        );
-      })}
+          {open[i] && <div className="hint-content">{text}</div>}
+        </div>
+      ))}
     </div>
   );
 };
