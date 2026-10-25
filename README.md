@@ -1,145 +1,117 @@
 # ProofQuest — Every Move Must Be Proven
 
-> **Syntax Error 2026** · Functional Programming Track · Challenge: *Proof Puzzle*
-> A visual puzzle game where **every move is a machine-checked Lean 4 proof step**. Lean decides whether a move is legal and whether the puzzle is solved. The browser only displays what Lean verified.
+> A visual puzzle game where **every move is a machine-checked Lean 4 proof step**.
+> Lean decides whether a move is legal and whether the puzzle is solved — the browser just shows what Lean verified.
+
+Built for **Syntax Error 2026**, Functional Programming Track.
 
 ---
 
-## Architecture Overview
+## What it is
 
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BROWSER CLIENT (React + TS + Vite)               │
-│  - Dual Board Display: Current Board + Target Board                     │
-│    (Color-blind accessible: high-contrast colors, symbols & numbers)    │
-│  - CodeMirror 6 Editor: Per-line proof status gutters & error squiggles │
-│  - Step Timeline Scrubber: Inspect intermediate board after each step   │
-│  - 3-Tier Progressive Hints + Concept Introduction Cards                │
-│  - Raw Lean 4 Diagnostics Modal Inspector                               │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ HTTP POST /api/verify
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BACKEND SERVER (Node.js + Express)              │
-│  - Security Sanitizer & AST Filter: Blocks sorry, axiom, native_decide, │
-│    imports, #eval, etc.                                                │
-│  - Sandbox Executor: Timeout (4.5s), Memory Cap (512MB), isolated user │
-│  - File Assembler: Immutable Prelude + Level Goal + Player Tactic Body │
-│  - Output Parser: Extracts tagged board snapshots (`PQ_STATE`) & diags │
-│  - Friendly Translator: Maps raw Lean errors into beginner-friendly msg│
-│  - In-Memory SHA-256 Verification Cache (instant replay)                │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ Spawns Lean process
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        LEAN 4 ENGINE (v4.16.0 Core Library)            │
-│  - ProofQuest/Core.lean: Color, Board, Move, apply?, Reaches relation  │
-│  - ProofQuest/Tactics.lean: paint, swap, rotate_row, finish tactics    │
-│  - ProofQuest/Report.lean: Emits `PQ_STATE {"width":..,"cells":..}`    │
-│  - Levels 1 to 10: Formally proved reachability theorems               │
-└────────────────────────────────────────────────────────────────────────┘
+ProofQuest is a grid-based puzzle game where you solve levels by writing real Lean 4 tactic proofs. The catch: there's no fake validation layer. Each line you type is handed to Lean 4, which either accepts it as a valid move toward the goal or rejects it with a precise error. You can't guess your way through — the type system is the referee.
+
+The 10 levels introduce concepts progressively: from single-step repainting to sequencing moves, reading diagnostics, recovering from illegal operations, and eventually writing reusable Lean macros that you call across a 4×4 board.
+
+---
+
+## How it works
+
+The game is built around an inductive `Reaches` relation in Lean 4:
+
+```lean
+inductive Reaches : Board → Board → Prop
+  | done (b : Board) : Reaches b b
+  | step (m : Move) {a b c : Board} :
+      a.apply? m = some b → Reaches b c → Reaches a c
 ```
 
----
+Each tactic you write (`paint`, `swap`, `rotate_row`) is a step in this proof. When you call `finish`, Lean checks that the current board state actually matches the target — it won't close the goal otherwise. The puzzle is solved when and only when Lean says so.
 
-## The Proof Model
-
-- **State Representation**: The grid is represented by an immutable Lean inductive structure `Board` containing a list of `Color`s (`red`, `blue`, `green`, `yellow`, `purple`, `orange`).
-- **Moves**: Moves are constructors of inductive type `Move`: `paint (idx : Nat) (c : Color)`, `swap (i j : Nat)`, `rotateRow (r : Nat)`.
-- **Preconditions & Legality**: Pure function `Board.apply? : Move → Option Board` returns `none` if preconditions fail (e.g. out-of-bounds tile index or non-existent row), or `some nextBoard` if legal.
-- **Reachability Relation**:
-  ```lean
-  inductive Reaches : Board → Board → Prop
-    | done (b : Board) : Reaches b b
-    | step (m : Move) {a b c : Board} :
-        a.apply? m = some b → Reaches b c → Reaches a c
-  ```
-- **Tactic Steps**: Each line of player code (e.g. `swap 0 1`, `paint 8 green`, `rotate_row 0`) elaborates as a tactic that verifies preconditions, logs the board snapshot (`PQ_STATE {...}`), and refines the goal via `Reaches.step move (by rfl) ?_`.
-- **Completion**: `finish` succeeds only when `currentBoard == targetBoard`, closing the proof with `Reaches.done`.
+The backend wraps Lean in a sandboxed subprocess (4.5s timeout, 512MB memory cap, forbidden keyword filter), parses board snapshots from tagged output, and translates raw Lean errors into something readable for beginners.
 
 ---
 
-## Quickstart: Running ProofQuest
+## Architecture
+
+```
+Browser (React + TypeScript + Vite)
+  │  Dual board view, CodeMirror 6 editor, step timeline, hints drawer
+  │
+  │  HTTP POST /api/verify
+  ▼
+Express Server (Node.js)
+  │  Sanitizer → File assembler → Lean subprocess → Output parser → Cache
+  │
+  ▼
+Lean 4 Engine (v4.16.0)
+  │  ProofQuest/Core.lean    — Board, Color, Move, apply?, Reaches
+  │  ProofQuest/Tactics.lean — paint, swap, rotate_row, finish
+  │  ProofQuest/Report.lean  — PQ_STATE snapshot emitter
+  └  Levels 1–10             — Formally stated reachability goals
+```
+
+---
+
+## Running it locally
 
 **Prerequisites:**
 - Node.js >= 20
-- Lean 4 toolchain via `elan` (`curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.16.0`)
+- Lean 4 via elan:
+  ```bash
+  curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain leanprover/lean4:v4.16.0
+  ```
 
-**Steps:**
 ```bash
-# 1. Build the Lean 4 library
+# 1. Build the Lean library
 cd lean && lake build && cd ..
 
-# 2. Build the client and server
+# 2. Build client + server
 npm run build
 
-# 3. Start the server (serves both API and frontend UI)
+# 3. Start (serves both API and UI on the same port)
 npm start
 ```
-Open **`http://localhost:3001`** in your browser.
+
+Open `http://localhost:3001`.
 
 ---
 
-## Running the Automated Test Suite
-
-Every level's reference solution, cheat resistance filter, illegal move diagnostics, and par conditions are verified end-to-end against real Lean 4:
+## Tests
 
 ```bash
 npm test
 ```
 
-Expected output:
-```
- ✓ test/verifier.test.ts (19 tests)
-   ✓ Sanitizer & Cheat Resistance > rejects sorry escape
-   ✓ Sanitizer & Cheat Resistance > rejects axiom declaration
-   ✓ Sanitizer & Cheat Resistance > rejects native_decide
-   ✓ Sanitizer & Cheat Resistance > rejects #eval commands
-   ✓ Sanitizer & Cheat Resistance > rejects imports
-   ✓ Sanitizer & Cheat Resistance > rejects macro in levels without helpers unlocked
-   ✓ Sanitizer & Cheat Resistance > allows macro in levels with helpers unlocked
-   ✓ Illegal Moves & Error Handling > detects out-of-bounds tile on swap
-   ✓ Illegal Moves & Error Handling > detects premature finish when boards do not match
-   ✓ Reference Solutions for Every Level (1 to 10) > Level 1 (First Brush)
-   ✓ Reference Solutions for Every Level (1 to 10) > Level 2 (Trade Places)
-   ✓ ...
-   ✓ Reference Solutions for Every Level (1 to 10) > Level 10 (Grand Pattern)
- Test Files  1 passed (1)
- Tests       19 passed (19)
-```
+Runs 19 end-to-end tests against the real Lean 4 engine — sanitizer rules, illegal move detection, and a reference solution for every level.
 
 ---
 
-## Level Map & Learning Ramp
+## Level Map
 
-| Level | Title | Core Concept | Moves Available | Par |
-|---|---|---|---|---|
-| **01** | First Brush | Tactic steps & goal completion | `paint`, `finish` | 1 |
-| **02** | Trade Places | State transformations with preconditions | `swap`, `finish` | 1 |
-| **03** | Swap & Paint | Sequencing and order of operations | `swap`, `paint`, `finish` | 2 |
-| **04** | Round and Round | Bulk transformations | `rotate_row`, `swap`, `paint`, `finish` | 2 |
-| **05** | Out of Bounds | Reading Lean diagnostics & fixing illegal moves | all | 2 |
-| **06** | Many Roads | Proof optimization & Par budget | all | 3 |
-| **07** | Name It | First reusable helper macro (Abstraction) | `macro`, all | 3 |
-| **08** | Reuse | Multi-invocation helper across the board | `macro`, all | 4 |
-| **09** | Build on Build | Composition: Helpers calling helpers | `macro`, all | 4 |
-| **10** | Grand Pattern | 4×4 Tapestry finale (16 tiles) | `macro`, all | 4 |
-
----
-
-## 2-to-3 Minute Live Demo Script
-
-1. **0:00 — The Problem & Premise**: Open `http://localhost:3001`. Point out the dual boards (Current vs Target) and the CodeMirror proof editor. Emphasize: *"This is not a JavaScript game pretending to check code. Lean 4 is the referee."*
-2. **0:25 — Level 1 / First Step**: Type `paint 0 green` followed by `finish`. Click **Run Proof** (or Ctrl+Enter). Show the green success banner, latency metric (~1.1s), and star rating.
-3. **0:50 — Stepping through Time**: Open Level 3 (*Swap & Paint*). Use the **Step Timeline Scrubber** slider to scrub backward and forward through intermediate board states.
-4. **1:20 — The Referee in Action (Deliberate Illegal Move)**: Open Level 5 (*Out of Bounds*). Run the pre-filled proof containing `swap 0 9`. Show the exact red line highlight: *"Illegal move: tile 9 is out of bounds (board has 9 tiles: 0 to 8)"*. Explain how Lean halted goal progression and succeeding lines are greyed out. Change `9` to `2` and run again to clear the level.
-5. **1:55 — Complete Transparency**: Click the **Raw Lean Output** button in the message panel to show judges the underlying Lean 4 JSON diagnostics.
-6. **2:20 — Functional Abstraction & Composition**: Jump to Level 7 (*Name It*) or Level 9 (*Build on Build*). Demonstrate defining a Lean `macro` helper and reusing it, showing the FP payoff of abstraction and composition.
+| # | Title | What you learn | Par |
+|---|-------|----------------|-----|
+| 01 | First Brush | Writing your first tactic step | 1 |
+| 02 | Trade Places | State transformations with preconditions | 1 |
+| 03 | Swap & Paint | Sequencing and order of operations | 2 |
+| 04 | Round and Round | Bulk row transformations | 2 |
+| 05 | Out of Bounds | Reading Lean errors, fixing illegal moves | 2 |
+| 06 | Many Roads | Proof optimization within a par budget | 3 |
+| 07 | Name It | Defining a reusable Lean macro | 3 |
+| 08 | Reuse | Calling a helper multiple times | 4 |
+| 09 | Build on Build | Composing helpers that call other helpers | 4 |
+| 10 | Grand Pattern | 4×4 board finale — 16 tiles | 4 |
 
 ---
 
-## Honesty About Limits & Verification Scope
+## Security
 
-- **What is formally verified**: Lean 4 proves that the target board is mechanically reachable from the start board via the game's inductive `Reaches` relation using strictly legal moves.
-- **What is server-defined**: The game rules (`Board.apply?`) and level definitions (`pq_start`, `pq_target`) are defined by our library in `Core.lean`. Lean guarantees our rules are followed faithfully; it does not prove game balance or human solvability beyond our automated reference test suite.
-- **Security Sandboxing**: Untrusted code is sanitized against forbidden keywords (`sorry`, `axiom`, `native_decide`, `unsafe`, etc.), executed under strict 4.5s timeouts and memory limits, and runs in a container under an unprivileged user.
+Untrusted input is sanitized before reaching Lean. Blocked: `sorry`, `axiom`, `native_decide`, `unsafe`, `#eval`, `import`, and macro definitions in early levels. Execution runs in a subprocess with a hard timeout and memory cap.
+
+---
+
+## What's formally verified vs. what isn't
+
+**Verified by Lean:** the target board is reachable from the start board via the game's inductive `Reaches` relation, using only moves that pass `Board.apply?`.
+
+**Not verified by Lean:** game balance, human solvability, or that the levels are "fun". Those are on us.
