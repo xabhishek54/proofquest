@@ -373,7 +373,7 @@ button {
   align-items: stretch;
   gap: 20px;
   width: 100%;
-  max-width: 460px;
+  max-width: 750px;
   margin: 0 auto;
 }
 
@@ -418,9 +418,9 @@ button {
 /* The Board Grid (Centered) */
 .board-grid {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   width: 100%;
-  max-width: 180px;
+  max-width: 320px;
   margin: 0 auto;
   justify-content: center;
 }
@@ -431,8 +431,8 @@ button {
 
 .board-grid.grid-4 {
   grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-  max-width: 215px;
+  gap: 8px;
+  max-width: 380px;
 }
 
 /* Cell Wrapper */
@@ -497,7 +497,7 @@ button {
 
 /* Geometric Symbols: One Consistent Crisp White Style */
 .tile-symbol {
-  font-size: 16px;
+  font-size: 28px;
   color: #FFFFFF;
   font-weight: 700;
   line-height: 1;
@@ -1707,7 +1707,7 @@ button {
   }
   .boards-dual {
     gap: 12px;
-    max-width: 400px;
+    max-width: 700px;
   }
   .board-section {
     padding: 6px 8px 8px;
@@ -1716,14 +1716,14 @@ button {
     margin-bottom: 6px;
   }
   .board-grid {
-    max-width: 145px;
-    gap: 4px;
+    max-width: 300px;
+    gap: 8px;
   }
   .board-grid.grid-4 {
-    max-width: 175px;
+    max-width: 360px;
   }
   .tile-symbol {
-    font-size: 14px;
+    font-size: 22px;
   }
   .tile-coord-label {
     font-size: 8.5px;
